@@ -915,6 +915,64 @@ async def test_update_success() -> None:
     )
     await c.async_update()
     assert c.aqi > 0
+    assert c.last_poll_api_reachable is True
+    assert c.last_update_successful is True
+    assert c.last_response_status == 200
+    assert c.last_request_error is None
+
+
+@pytest.mark.asyncio
+async def test_check_api_reachable_success() -> None:
+    """The live API probe reports current endpoint reachability."""
+    c = Collector(
+        api_key=TEST_API_KEY_1,
+        epa_site_id=TEST_SITE_ID_1,
+        latitude=TEST_LAT,
+        longitude=TEST_LON,
+        session=MockClientSession([MockResponse({"records": []})]),  # pyright: ignore[reportArgumentType]
+    )
+
+    assert await c.async_check_api_reachable() == {
+        "reachable": True,
+        "response_status": 200,
+        "error": None,
+    }
+
+
+@pytest.mark.asyncio
+async def test_check_api_reachable_without_session() -> None:
+    """The live API probe reports unreachable when no client session is available."""
+    c = Collector(
+        api_key=TEST_API_KEY_1,
+        epa_site_id=TEST_SITE_ID_1,
+        latitude=TEST_LAT,
+        longitude=TEST_LON,
+        session=None,
+    )
+
+    assert await c.async_check_api_reachable() == {
+        "reachable": False,
+        "response_status": None,
+        "error": "missing_session",
+    }
+
+
+@pytest.mark.asyncio
+async def test_check_api_reachable_auth_failure_response() -> None:
+    """The live API probe distinguishes reachable auth failures from transport failures."""
+    c = Collector(
+        api_key=TEST_API_KEY_1,
+        epa_site_id=TEST_SITE_ID_1,
+        latitude=TEST_LAT,
+        longitude=TEST_LON,
+        session=MockClientSession([MockResponse({}, status=403)]),  # pyright: ignore[reportArgumentType]
+    )
+
+    assert await c.async_check_api_reachable() == {
+        "reachable": True,
+        "response_status": 403,
+        "error": "authentication_failed",
+    }
 
 
 @pytest.mark.asyncio
@@ -948,6 +1006,72 @@ async def test_update_connection_refused() -> None:
         session=ErrorClientSession(ConnectionRefusedError("refused")),  # pyright: ignore[reportArgumentType]
     )
     await c.async_update()  # Must not raise
+    assert c.last_poll_api_reachable is False
+    assert c.last_update_successful is False
+    assert c.last_response_status is None
+    assert c.last_request_error == "refused"
+
+
+@pytest.mark.asyncio
+async def test_check_api_reachable_connection_refused() -> None:
+    """The live API probe reports unreachable when the request cannot connect."""
+    c = Collector(
+        api_key=TEST_API_KEY_1,
+        epa_site_id=TEST_SITE_ID_1,
+        latitude=TEST_LAT,
+        longitude=TEST_LON,
+        session=ErrorClientSession(ConnectionRefusedError("refused")),  # pyright: ignore[reportArgumentType]
+    )
+
+    assert await c.async_check_api_reachable() == {
+        "reachable": False,
+        "response_status": None,
+        "error": "refused",
+    }
+
+
+@pytest.mark.asyncio
+async def test_check_api_reachable_client_response_error() -> None:
+    """The live API probe reports reachable when the server returns an HTTP error."""
+
+    def _make_client_response_error(status: int) -> ClientResponseError:
+        return ClientResponseError(
+            RequestInfo(url="https://example.com", method="GET", headers={}, real_url="https://example.com"),  # type: ignore[arg-type]
+            history=(),
+            status=status,
+        )
+
+    c = Collector(
+        api_key=TEST_API_KEY_1,
+        epa_site_id=TEST_SITE_ID_1,
+        latitude=TEST_LAT,
+        longitude=TEST_LON,
+        session=ErrorClientSession(_make_client_response_error(502)),  # pyright: ignore[reportArgumentType]
+    )
+
+    assert await c.async_check_api_reachable() == {
+        "reachable": True,
+        "response_status": 502,
+        "error": "http_502",
+    }
+
+
+@pytest.mark.asyncio
+async def test_check_api_reachable_unexpected_exception() -> None:
+    """The live API probe collapses unexpected exceptions into a stable diagnostics value."""
+    c = Collector(
+        api_key=TEST_API_KEY_1,
+        epa_site_id=TEST_SITE_ID_1,
+        latitude=TEST_LAT,
+        longitude=TEST_LON,
+        session=ErrorClientSession(RuntimeError("boom")),  # pyright: ignore[reportArgumentType]
+    )
+
+    assert await c.async_check_api_reachable() == {
+        "reachable": False,
+        "response_status": None,
+        "error": "unexpected_exception",
+    }
 
 
 @pytest.mark.asyncio
