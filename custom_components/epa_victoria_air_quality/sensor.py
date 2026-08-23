@@ -101,6 +101,7 @@ except ImportError:
         PARTS_PER_BILLION = CONCENTRATION_PARTS_PER_BILLION
         PARTS_PER_MILLION = CONCENTRATION_PARTS_PER_MILLION
 
+
 PARALLEL_UPDATES = 0
 
 # When enabled, sensor entities always write state updates to Recorder, even if the value has not changed.

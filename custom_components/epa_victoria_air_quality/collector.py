@@ -307,9 +307,7 @@ class Collector:
 
                         site_id = record[SITE_ID]
                         site_name = (
-                            (record[SITE_NAME] + SITE_TYPE_SENSOR_LABEL_SUFFIX)
-                            if site_type == SITE_TYPE_SENSOR
-                            else record[SITE_NAME]
+                            (record[SITE_NAME] + SITE_TYPE_SENSOR_LABEL_SUFFIX) if site_type == SITE_TYPE_SENSOR else record[SITE_NAME]
                         )
                         latitude = record[GEOMETRY][COORDINATES][0]
                         longitude = record[GEOMETRY][COORDINATES][1]
