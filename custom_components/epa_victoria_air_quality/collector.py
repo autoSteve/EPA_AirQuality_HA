@@ -290,40 +290,39 @@ class Collector:
                 temp_loc_list = []
                 locations_list = await response.json()
                 try:
-                    records: dict = {}
-                    record: dict = {}
-                    site_health_advices: dict = {}
-                    if locations_list.get(RECORDS) is not None:
-                        records = locations_list[RECORDS]
-                        for record in records:
-                            site_id = record[SITE_ID]
-                            site_name = (
-                                (record[SITE_NAME] + SITE_TYPE_SENSOR_LABEL_SUFFIX)
-                                if record[SITE_TYPE] == SITE_TYPE_SENSOR
-                                else record[SITE_NAME]
-                            )
-                            site_type = record[SITE_TYPE]
-                            if site_type in (
-                                SITE_TYPE_SENSOR,
-                                SITE_TYPE_STANDARD,
-                            ):  # If it isn't a camera
-                                if (
-                                    record.get(SITE_HEALTH_ADVICES) is not None and record.get(SITE_HEALTH_ADVICES)[0] is not None  # pyright: ignore[reportOptionalSubscript]
-                                ):  # Get Health Site Advices
-                                    site_health_advices = record[SITE_HEALTH_ADVICES][0]
-                                    if site_health_advices.get(HEALTH_PARAMETER) is not None:  # If site has a Health Parameter
-                                        latitude = record[GEOMETRY][COORDINATES][0]
-                                        longitude = record[GEOMETRY][COORDINATES][1]
-                                        temp_loc_list.append(
-                                            {
-                                                SITE_ID: site_id,
-                                                SITE_NAME: site_name,
-                                                DISTANCE: distance.geodesic(
-                                                    (latitude, longitude),
-                                                    (self.latitude, self.longitude),
-                                                ).meters,
-                                            }
-                                        )
+                    records = locations_list.get(RECORDS) or []
+                    for record in records:
+                        site_type = record[SITE_TYPE]
+                        if site_type not in (SITE_TYPE_SENSOR, SITE_TYPE_STANDARD):
+                            # Ignore non-sensor/non-standard sites (for example cameras).
+                            continue
+
+                        site_health_advices = record.get(SITE_HEALTH_ADVICES)
+                        if not site_health_advices or site_health_advices[0] is None:
+                            continue
+
+                        site_health_advice = site_health_advices[0]
+                        if site_health_advice.get(HEALTH_PARAMETER) is None:
+                            continue
+
+                        site_id = record[SITE_ID]
+                        site_name = (
+                            (record[SITE_NAME] + SITE_TYPE_SENSOR_LABEL_SUFFIX)
+                            if site_type == SITE_TYPE_SENSOR
+                            else record[SITE_NAME]
+                        )
+                        latitude = record[GEOMETRY][COORDINATES][0]
+                        longitude = record[GEOMETRY][COORDINATES][1]
+                        temp_loc_list.append(
+                            {
+                                SITE_ID: site_id,
+                                SITE_NAME: site_name,
+                                DISTANCE: distance.geodesic(
+                                    (latitude, longitude),
+                                    (self.latitude, self.longitude),
+                                ).meters,
+                            }
+                        )
                     sorted_locs = sorted(temp_loc_list, key=lambda itm: itm.get(DISTANCE))
                     self.locations_list: list[SelectOptionDict] = [
                         SelectOptionDict(label=location[SITE_NAME], value=location[SITE_ID]) for location in sorted_locs

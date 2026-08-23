@@ -182,8 +182,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: EPAConfigEntry) -> bool:
                 )
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
-    hass.data.setdefault(DOMAIN, {})
-
     # Safety-net, then register and prep for unload.
     while async_update_options in entry.update_listeners:
         entry.update_listeners.remove(async_update_options)

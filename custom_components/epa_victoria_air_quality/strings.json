@@ -101,6 +101,14 @@
       }
     }
   },
+  "exceptions": {
+    "reauth_in_progress": {
+      "message": "Authentication failed while reauthentication is already in progress"
+    },
+    "reauth_required": {
+      "message": "Authentication failed and reauthentication is required: {error}"
+    }
+  },
   "options": {
     "error": {
       "unknown": "Unknown error"

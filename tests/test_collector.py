@@ -233,6 +233,26 @@ async def test_get_locations_list_site_without_health_parameter() -> None:
     assert len(c.locations_list) == 0  # Site excluded but no error
 
 
+@pytest.mark.asyncio
+async def test_get_locations_list_site_without_health_advices() -> None:
+    """Sites without siteHealthAdvices are excluded without raising errors."""
+    payload = {
+        "records": [
+            {
+                "siteID": "99002",
+                "siteName": "No Advice Site",
+                "siteType": "Standard",
+                "geometry": {"coordinates": [-37.82, 144.97]},
+                "siteHealthAdvices": [],
+            }
+        ]
+    }
+    c = Collector(api_key=TEST_API_KEY_1, latitude=TEST_LAT, longitude=TEST_LON, session=MockClientSession([MockResponse(payload)]))  # pyright: ignore[reportArgumentType]
+    await c.get_locations_list()
+    assert c.sites_found is True
+    assert c.locations_list == []
+
+
 def test_getters_site_not_found() -> None:
     """Return zero/empty defaults when site has not been resolved."""
     c = Collector(api_key=TEST_API_KEY_1, latitude=TEST_LAT, longitude=TEST_LON)
