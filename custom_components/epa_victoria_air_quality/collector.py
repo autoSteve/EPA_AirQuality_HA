@@ -294,7 +294,7 @@ class Collector:
                     for record in records:
                         site_type = record[SITE_TYPE]
                         if site_type not in (SITE_TYPE_SENSOR, SITE_TYPE_STANDARD):
-                            # Ignore non-sensor/non-standard sites (for example cameras).
+                            # Ignore site types that are not supported by this integration.
                             continue
 
                         site_health_advices = record.get(SITE_HEALTH_ADVICES)
