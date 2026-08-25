@@ -1,5 +1,6 @@
 """Tests for the EPA Victoria Air Quality sensor platform."""
 
+import importlib
 from datetime import datetime as dt
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -343,3 +344,25 @@ async def test_added_to_hass_registers_listener(hass: HomeAssistant) -> None:
     sensor._coordinator.async_add_listener.assert_any_call(  # pyright: ignore[reportAttributeAccessIssue]
         sensor._handle_coordinator_update
     )
+
+
+def test_sensor_import_uses_compatibility_shim_when_unit_enums_missing() -> None:
+    """Reloading the sensor module without the new unit enums falls back to compatibility shims."""
+    import homeassistant.components.epa_victoria_air_quality.sensor as sensor_module
+
+    real_import = __import__
+
+    def _import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "homeassistant.const" and tuple(fromlist) == ("UnitOfDensity", "UnitOfRatio"):
+            raise ImportError("compatibility test")
+        return real_import(name, globals, locals, fromlist, level)
+
+    with patch("builtins.__import__", side_effect=_import):
+        reloaded_module = importlib.reload(sensor_module)
+
+    try:
+        assert reloaded_module.UnitOfDensity.MICROGRAMS_PER_CUBIC_METER == reloaded_module.CONCENTRATION_MICROGRAMS_PER_CUBIC_METER
+        assert reloaded_module.UnitOfRatio.PARTS_PER_BILLION == reloaded_module.CONCENTRATION_PARTS_PER_BILLION
+        assert reloaded_module.UnitOfRatio.PARTS_PER_MILLION == reloaded_module.CONCENTRATION_PARTS_PER_MILLION
+    finally:
+        importlib.reload(sensor_module)

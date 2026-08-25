@@ -151,6 +151,10 @@ Add the yaml to a dashboard: you can do this by adding a card to a dashboard, ch
 
 [<img src="https://github.com/BJReplay/EPA_AirQuality_HA/blob/main/.github/SCREENSHOTS/sample_card.png">](https://github.com/BJReplay/EPA_AirQuality_HA/blob/main/.github/SCREENSHOTS/sample_card.png)
 
+## Troubleshooting
+
+Each instance of the integration set up for a location under `Settings` | `Devices & services` supports downloading diagnostics: click on the vertical three dots menu next to the gear icon and choose `Download diagnostics`.  The diagnostics will be downloaded to a json file, and will provide useful information to assist in resolving any issues, or understanding whether any problem is due to the integration, or failure of provision of data by the EPA.  The API key is redacted in the diagnostics so the file is safe to share.
+
 ## Acknowledgements
 
 Inspired by [@loryanstrant](https://github.com/loryanstrant) who published [this article](https://www.loryanstrant.com/2023/07/23/track-air-quality-with-home-assistant-and-epa-data/) that helped me track air quality in HA, and created the first repo for this project.

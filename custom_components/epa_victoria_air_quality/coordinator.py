@@ -146,8 +146,15 @@ class EPADataUpdateCoordinator(DataUpdateCoordinator):
                 for progress_flow in self.hass.config_entries.flow.async_progress_by_handler(DOMAIN)
             )
             if reauth_in_progress:
-                raise UpdateFailed("Authentication failed while reauth flow is already in progress") from None
-            raise ConfigEntryAuthFailed(str(ex)) from None
+                raise UpdateFailed(
+                    translation_domain=DOMAIN,
+                    translation_key="reauth_in_progress",
+                ) from None
+            raise ConfigEntryAuthFailed(
+                translation_domain=DOMAIN,
+                translation_key="reauth_required",
+                translation_placeholders={"error": str(ex)},
+            ) from None
         self._auto_enable_available_sensors()
         return None
 

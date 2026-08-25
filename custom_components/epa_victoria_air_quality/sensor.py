@@ -81,6 +81,7 @@ except ImportError:
     # UnitOfDensity/UnitOfRatio. Keep names aligned with newer HA classes so
     # the sensor descriptions below can remain unchanged.
     #
+    # pylint: disable-next=fixme
     # TODO: Remove this fallback after < HA 2026.8 support is no longer needed.
     # Add a minimum HA version requirement at that point.
     from homeassistant.const import (
@@ -99,6 +100,7 @@ except ImportError:
 
         PARTS_PER_BILLION = CONCENTRATION_PARTS_PER_BILLION
         PARTS_PER_MILLION = CONCENTRATION_PARTS_PER_MILLION
+
 
 PARALLEL_UPDATES = 0
 

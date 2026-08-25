@@ -12,7 +12,7 @@ import aqicalc as aqi
 from geopy import distance
 
 from homeassistant.helpers.selector import SelectOptionDict
-from homeassistant.util import Throttle
+from homeassistant.util import Throttle, dt as dt_util
 
 from .const import (
     AQI_SOURCE_OVERALL,
@@ -237,7 +237,11 @@ class Collector:
         self.pm25_24h: float | None = 0
         self.total_sample: float = 0
         self.total_sample_24h: float = 0
-        self.last_updated: dt = dt.fromtimestamp(0)
+        self.last_updated: dt = dt_util.utc_from_timestamp(0)
+        self.last_poll_api_reachable: bool = False
+        self.last_update_successful: bool = False
+        self.last_response_status: int | None = None
+        self.last_request_error: str | None = None
         self.site_found: bool = False
         self.sites_found: bool = False
         self.available_sensor_keys: set[str] = set()
@@ -286,40 +290,37 @@ class Collector:
                 temp_loc_list = []
                 locations_list = await response.json()
                 try:
-                    records: dict = {}
-                    record: dict = {}
-                    siteHealthAdvices: dict = {}
-                    if locations_list.get(RECORDS) is not None:
-                        records = locations_list[RECORDS]
-                        for record in records:
-                            site_id = record[SITE_ID]
-                            site_name = (
-                                (record[SITE_NAME] + SITE_TYPE_SENSOR_LABEL_SUFFIX)
-                                if record[SITE_TYPE] == SITE_TYPE_SENSOR
-                                else record[SITE_NAME]
-                            )
-                            site_type = record[SITE_TYPE]
-                            if site_type in (
-                                SITE_TYPE_SENSOR,
-                                SITE_TYPE_STANDARD,
-                            ):  # If it isn't a camera
-                                if (
-                                    record.get(SITE_HEALTH_ADVICES) is not None and record.get(SITE_HEALTH_ADVICES)[0] is not None  # pyright: ignore[reportOptionalSubscript]
-                                ):  # Get Health Site Advices
-                                    siteHealthAdvices = record[SITE_HEALTH_ADVICES][0]
-                                    if siteHealthAdvices.get(HEALTH_PARAMETER) is not None:  # If site has a Health Parameter
-                                        latitude = record[GEOMETRY][COORDINATES][0]
-                                        longitude = record[GEOMETRY][COORDINATES][1]
-                                        temp_loc_list.append(
-                                            {
-                                                SITE_ID: site_id,
-                                                SITE_NAME: site_name,
-                                                DISTANCE: distance.geodesic(
-                                                    (latitude, longitude),
-                                                    (self.latitude, self.longitude),
-                                                ).meters,
-                                            }
-                                        )
+                    records = locations_list.get(RECORDS) or []
+                    for record in records:
+                        site_type = record[SITE_TYPE]
+                        if site_type not in (SITE_TYPE_SENSOR, SITE_TYPE_STANDARD):
+                            # Ignore site types that are not supported by this integration.
+                            continue
+
+                        site_health_advices = record.get(SITE_HEALTH_ADVICES)
+                        if not site_health_advices or site_health_advices[0] is None:
+                            continue
+
+                        site_health_advice = site_health_advices[0]
+                        if site_health_advice.get(HEALTH_PARAMETER) is None:
+                            continue
+
+                        site_id = record[SITE_ID]
+                        site_name = (
+                            (record[SITE_NAME] + SITE_TYPE_SENSOR_LABEL_SUFFIX) if site_type == SITE_TYPE_SENSOR else record[SITE_NAME]
+                        )
+                        latitude = record[GEOMETRY][COORDINATES][0]
+                        longitude = record[GEOMETRY][COORDINATES][1]
+                        temp_loc_list.append(
+                            {
+                                SITE_ID: site_id,
+                                SITE_NAME: site_name,
+                                DISTANCE: distance.geodesic(
+                                    (latitude, longitude),
+                                    (self.latitude, self.longitude),
+                                ).meters,
+                            }
+                        )
                     sorted_locs = sorted(temp_loc_list, key=lambda itm: itm.get(DISTANCE))
                     self.locations_list: list[SelectOptionDict] = [
                         SelectOptionDict(label=location[SITE_NAME], value=location[SITE_ID]) for location in sorted_locs
@@ -802,6 +803,58 @@ class Collector:
         """Raise an auth error for invalid EPA credentials."""
         raise EPAAuthError(f"{self.site_name or self.site_id} API key unauthorised (HTTP {status})")
 
+    def _record_update_result(
+        self,
+        *,
+        reachable: bool,
+        successful: bool,
+        response_status: int | None,
+        error: str | None,
+    ) -> None:
+        """Persist the outcome of the latest API update attempt."""
+        self.last_poll_api_reachable = reachable
+        self.last_update_successful = successful
+        self.last_response_status = response_status
+        self.last_request_error = error
+
+    async def async_check_api_reachable(self) -> dict[str, bool | int | str | None]:
+        """Check whether the EPA API endpoint is reachable right now."""
+        session = self._session
+        if session is None:
+            return {
+                "reachable": False,
+                "response_status": None,
+                "error": "missing_session",
+            }
+
+        try:
+            async with session.get(f"{URL_BASE}{URL_LIST_SITE}", headers=self.headers, ssl=False) as resp:
+                return {
+                    "reachable": True,
+                    "response_status": resp.status,
+                    "error": (
+                        "authentication_failed" if resp.status in (401, 403) else (f"http_{resp.status}" if resp.status >= 400 else None)
+                    ),
+                }
+        except ConnectionRefusedError as err:
+            return {
+                "reachable": False,
+                "response_status": None,
+                "error": str(err),
+            }
+        except ClientResponseError as err:
+            return {
+                "reachable": True,
+                "response_status": err.status,
+                "error": ("authentication_failed" if err.status in (401, 403) else f"http_{err.status}"),
+            }
+        except Exception:  # noqa: BLE001
+            return {
+                "reachable": False,
+                "response_status": None,
+                "error": "unexpected_exception",
+            }
+
     async def extract_observation_data(self):
         """Extract Observation Data to individual fields."""
         parameters: list[dict[str, object]] = []
@@ -841,7 +894,7 @@ class Collector:
 
             data_valid = bool(self.available_sensor_keys)
             if data_valid:
-                self.last_updated = dt.now()
+                self.last_updated = dt_util.utcnow()
                 if self._unavailable_logged:
                     _LOGGER.info("%s data is available again", self.site_name)
                     self._unavailable_logged = False
@@ -863,9 +916,22 @@ class Collector:
 
                 _LOGGER.debug("Updating %s observation data", self.site_name)
                 async with session.get(URL_BASE + self.get_location() + URL_PARAMETERS, headers=self.headers, ssl=False) as resp:
+                    self.last_response_status = resp.status
                     if resp.status in (401, 403):
+                        self._record_update_result(
+                            reachable=True,
+                            successful=False,
+                            response_status=resp.status,
+                            error="authentication_failed",
+                        )
                         self._raise_auth_error(resp.status)
                     if resp.status >= 500:
+                        self._record_update_result(
+                            reachable=True,
+                            successful=False,
+                            response_status=resp.status,
+                            error=f"http_{resp.status}",
+                        )
                         if not self._unavailable_logged:
                             _LOGGER.warning(
                                 "%s air quality readings could not be updated: the service returned HTTP %d (transient error, will retry)",
@@ -876,13 +942,37 @@ class Collector:
                         return
                     self.observations_data = await resp.json()
                     await self.extract_observation_data()
+                    self._record_update_result(
+                        reachable=True,
+                        successful=bool(self.available_sensor_keys),
+                        response_status=resp.status,
+                        error=None if self.available_sensor_keys else "no_valid_readings",
+                    )
         except ConnectionRefusedError as e:
+            self._record_update_result(
+                reachable=False,
+                successful=False,
+                response_status=None,
+                error=str(e),
+            )
             if not self._unavailable_logged:
                 _LOGGER.warning("Connection refused for site %s: %s", self.site_name, e)
                 self._unavailable_logged = True
         except ClientResponseError as e:
             if e.status in (401, 403):
+                self._record_update_result(
+                    reachable=True,
+                    successful=False,
+                    response_status=e.status,
+                    error="authentication_failed",
+                )
                 self._raise_auth_error(e.status)
+            self._record_update_result(
+                reachable=True,
+                successful=False,
+                response_status=e.status,
+                error=f"http_{e.status}",
+            )
             if not self._unavailable_logged:
                 _LOGGER.warning(
                     "%s air quality readings could not be updated: HTTP error %d (will retry)",
@@ -893,6 +983,12 @@ class Collector:
         except EPAAuthError:
             raise
         except Exception:  # noqa: BLE001
+            self._record_update_result(
+                reachable=False,
+                successful=False,
+                response_status=None,
+                error="unexpected_exception",
+            )
             if not self._unavailable_logged:
                 _LOGGER.warning(
                     "Exception in async_update() for site %s: %s",
