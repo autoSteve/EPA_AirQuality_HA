@@ -66,7 +66,7 @@ rules:
     comment: |
       This integration uses a cloud API and does not integrate local devices.
   docs-supported-functions: done
-  docs-troubleshooting: todo
+  docs-troubleshooting: done
   docs-use-cases: todo
   dynamic-devices:
     status: exempt
